@@ -59,6 +59,10 @@ export class CallService {
     try {
       const call = client.createCall(roomId);
       
+      if (!call) {
+        throw new Error('Failed to create call');
+      }
+      
       this.updateCallState({ call, isActive: true, isIncoming: false });
       
       await call.placeCall(video, video);

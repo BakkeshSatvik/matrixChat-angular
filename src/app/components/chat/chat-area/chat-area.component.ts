@@ -1,118 +1,70 @@
 import { Component, OnInit, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Subject, takeUntil } from 'rxjs';
 import { Room } from 'matrix-js-sdk';
 import { MatrixClientService } from '../../../services/matrix-client.service';
 import { NotificationService } from '../../../services/notification.service';
+import { CallService } from '../../../services/call.service';
+import { SidebarComponent } from '../../sidebar/sidebar.component';
+import { ChatHeaderComponent } from '../chat-header/chat-header.component';
+import { ChatInputComponent } from '../chat-input/chat-input.component';
+import { MessageListComponent, DisplayMessage } from '../message-list/message-list.component';
 
 @Component({
   selector: 'app-chat-area',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [
+    CommonModule,
+    SidebarComponent,
+    ChatHeaderComponent,
+    ChatInputComponent,
+    MessageListComponent
+  ],
   template: `
     <div class="flex h-screen bg-gray-100">
       <!-- Sidebar -->
-      <div class="w-64 bg-white border-r border-gray-200 flex flex-col">
-        <div class="p-4 border-b border-gray-200">
-          <h1 class="text-xl font-bold">Matrix Chat</h1>
-          <p class="text-sm text-gray-600">{{ userId() }}</p>
-        </div>
-        
-        <div class="flex-1 overflow-y-auto">
-          <div class="p-4">
-            <h2 class="text-sm font-semibold text-gray-600 mb-2">Rooms</h2>
-            @if (rooms().length === 0) {
-              <p class="text-sm text-gray-500">No rooms yet</p>
-            }
-            @for (room of rooms(); track room.roomId) {
-              <div 
-                class="p-3 mb-2 rounded-lg cursor-pointer hover:bg-gray-100"
-                [class.bg-blue-50]="selectedRoomId() === room.roomId"
-                (click)="selectRoom(room.roomId)"
-              >
-                <div class="font-medium">{{ room.name }}</div>
-                <div class="text-sm text-gray-500 truncate">
-                  {{ getLastMessage(room) }}
-                </div>
-              </div>
-            }
-          </div>
-        </div>
-
-        <div class="p-4 border-t border-gray-200">
-          <button
-            (click)="logout()"
-            class="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-          >
-            Logout
-          </button>
-        </div>
-      </div>
+      <app-sidebar
+        [rooms]="rooms()"
+        [selectedRoomId]="selectedRoomId()"
+        [userId]="userId()"
+        [syncState]="syncState()"
+        (onRoomSelect)="selectRoom($event)"
+        (onCreateRoom)="createNewRoom()"
+        (onLogout)="logout()"
+        (onSettings)="openSettings()"
+      />
 
       <!-- Main Chat Area -->
       <div class="flex-1 flex flex-col">
         @if (selectedRoom()) {
           <!-- Chat Header -->
-          <div class="bg-white border-b border-gray-200 p-4">
-            <h2 class="text-xl font-semibold">{{ selectedRoom()?.name }}</h2>
-            <p class="text-sm text-gray-600">
-              {{ selectedRoom()?.getJoinedMemberCount() }} members
-            </p>
-          </div>
+          <app-chat-header
+            [room]="selectedRoom()"
+            [isEncrypted]="isRoomEncrypted()"
+            (onVoiceCall)="startVoiceCall()"
+            (onVideoCall)="startVideoCall()"
+            (onRoomInfo)="openRoomInfo()"
+          />
 
           <!-- Messages -->
-          <div class="flex-1 overflow-y-auto p-4 space-y-4">
-            @if (messages().length === 0) {
-              <div class="text-center text-gray-500 mt-8">
-                No messages yet. Start the conversation!
-              </div>
-            }
-            @for (message of messages(); track message.event_id) {
-              <div class="flex items-start space-x-3">
-                <div class="flex-shrink-0">
-                  <div class="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold">
-                    {{ getSenderInitials(message.sender) }}
-                  </div>
-                </div>
-                <div class="flex-1">
-                  <div class="flex items-baseline space-x-2">
-                    <span class="font-semibold">{{ getSenderName(message.sender) }}</span>
-                    <span class="text-xs text-gray-500">
-                      {{ formatTimestamp(message.origin_server_ts) }}
-                    </span>
-                  </div>
-                  <div class="mt-1 text-gray-800">
-                    {{ message.content.body }}
-                  </div>
-                </div>
-              </div>
-            }
-          </div>
+          <app-message-list
+            [messages]="displayMessages()"
+            [currentUserId]="userId()"
+            (onReaction)="handleReaction($event)"
+          />
 
           <!-- Message Input -->
-          <div class="bg-white border-t border-gray-200 p-4">
-            <form (submit)="sendMessage($event)" class="flex space-x-2">
-              <input
-                type="text"
-                [(ngModel)]="messageText"
-                [ngModelOptions]="{standalone: true}"
-                placeholder="Type a message..."
-                class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <button
-                type="submit"
-                [disabled]="!messageText.trim()"
-                class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Send
-              </button>
-            </form>
-          </div>
+          <app-chat-input
+            (onSendMessage)="sendMessage($event)"
+          />
         } @else {
           <div class="flex-1 flex items-center justify-center text-gray-500">
-            Select a room to start chatting
+            <div class="text-center">
+              <div class="text-6xl mb-4">💬</div>
+              <h2 class="text-2xl font-semibold mb-2">Welcome to Matrix Chat</h2>
+              <p>Select a room to start chatting</p>
+            </div>
           </div>
         }
       </div>
@@ -126,13 +78,14 @@ export class ChatAreaComponent implements OnInit, OnDestroy {
   rooms = signal<Room[]>([]);
   selectedRoomId = signal<string | null>(null);
   selectedRoom = signal<Room | null>(null);
-  messages = signal<any[]>([]);
+  displayMessages = signal<DisplayMessage[]>([]);
   userId = signal<string>('');
-  messageText = '';
+  syncState = signal<string>('STOPPED');
 
   constructor(
     private matrixClientService: MatrixClientService,
     private notificationService: NotificationService,
+    private callService: CallService,
     private router: Router
   ) {}
 
@@ -155,6 +108,7 @@ export class ChatAreaComponent implements OnInit, OnDestroy {
     // Subscribe to sync state
     this.matrixClientService.syncState$.pipe(takeUntil(this.destroy$)).subscribe(state => {
       console.log('Sync state:', state);
+      this.syncState.set(state);
     });
   }
 
@@ -176,62 +130,91 @@ export class ChatAreaComponent implements OnInit, OnDestroy {
   loadMessages(room: Room): void {
     const timeline = room.getLiveTimeline();
     const events = timeline.getEvents();
+    const currentUserId = this.userId();
     
-    const messageEvents = events
+    const messageEvents: DisplayMessage[] = events
       .filter(event => event.getType() === 'm.room.message')
       .map(event => ({
-        event_id: event.getId(),
+        event_id: event.getId() || '',
         sender: event.getSender() || '',
-        origin_server_ts: event.getTs(),
+        senderName: this.getSenderName(event.getSender() || '', room),
+        timestamp: event.getTs(),
         content: event.getContent(),
+        isOwn: event.getSender() === currentUserId
       }));
     
-    this.messages.set(messageEvents);
+    this.displayMessages.set(messageEvents);
   }
 
-  async sendMessage(event: Event): Promise<void> {
-    event.preventDefault();
-    
+  async sendMessage(messageText: string): Promise<void> {
     const roomId = this.selectedRoomId();
-    if (!roomId || !this.messageText.trim()) {
+    if (!roomId || !messageText.trim()) {
       return;
     }
 
     try {
-      await this.matrixClientService.sendMessage(roomId, this.messageText);
-      this.messageText = '';
+      await this.matrixClientService.sendMessage(roomId, messageText);
     } catch (error) {
       console.error('Failed to send message:', error);
     }
   }
 
-  getLastMessage(room: Room): string {
-    const timeline = room.getLiveTimeline();
-    const events = timeline.getEvents();
-    const lastMessage = events
-      .filter(e => e.getType() === 'm.room.message')
-      .pop();
+  getSenderName(senderId: string, room: Room | null = null): string {
+    const targetRoom = room || this.selectedRoom();
+    if (!targetRoom) return senderId;
     
-    const content = lastMessage?.getContent();
-    return content?.['body'] || 'No messages';
-  }
-
-  getSenderName(senderId: string): string {
-    const room = this.selectedRoom();
-    if (!room) return senderId;
-    
-    const member = room.getMember(senderId);
+    const member = targetRoom.getMember(senderId);
     return member?.name || senderId;
   }
 
-  getSenderInitials(senderId: string): string {
-    const name = this.getSenderName(senderId);
-    return name.substring(0, 2).toUpperCase();
+  isRoomEncrypted(): boolean {
+    const room = this.selectedRoom();
+    if (!room) return false;
+    
+    const encryptionEvent = room.currentState.getStateEvents('m.room.encryption', '');
+    return !!encryptionEvent;
   }
 
-  formatTimestamp(ts: number): string {
-    const date = new Date(ts);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  async startVoiceCall(): Promise<void> {
+    const roomId = this.selectedRoomId();
+    if (!roomId) return;
+
+    try {
+      await this.callService.startCall(roomId, false);
+    } catch (error) {
+      console.error('Failed to start voice call:', error);
+    }
+  }
+
+  async startVideoCall(): Promise<void> {
+    const roomId = this.selectedRoomId();
+    if (!roomId) return;
+
+    try {
+      await this.callService.startCall(roomId, true);
+    } catch (error) {
+      console.error('Failed to start video call:', error);
+    }
+  }
+
+  openRoomInfo(): void {
+    console.log('Open room info');
+    // TODO: Implement room info drawer
+  }
+
+  createNewRoom(): void {
+    console.log('Create new room');
+    // TODO: Implement room creation modal
+  }
+
+  openSettings(): void {
+    console.log('Open settings');
+    // TODO: Implement settings
+  }
+
+  handleReaction(event: { messageId: string; emoji: string }): void {
+    console.log('Handle reaction:', event);
+    // TODO: Implement reactions
   }
 
   async logout(): Promise<void> {
