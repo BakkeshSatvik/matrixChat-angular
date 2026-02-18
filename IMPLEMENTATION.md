@@ -7,7 +7,7 @@ This is a complete conversion of the React-based Matrix Chat application to Angu
 ## Architecture
 
 ### Technology Stack
-- **Angular**: 18.2.0 (standalone components)
+- **Angular**: 19.2.18 (LTS with security patches)
 - **TypeScript**: 5.5.4
 - **Matrix JS SDK**: 40.3.0-rc.0
 - **Tailwind CSS**: 3.4.0

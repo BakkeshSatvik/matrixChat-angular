@@ -14,7 +14,7 @@ This is an Angular-based Matrix protocol chat application, converted from the Re
 
 ## Tech Stack
 
-- **Angular 18**: Modern standalone components
+- **Angular 19**: Modern standalone components with security patches
 - **TypeScript 5**: Type-safe development
 - **Matrix JS SDK v40.3**: Matrix protocol integration
 - **Tailwind CSS 3**: Utility-first styling
