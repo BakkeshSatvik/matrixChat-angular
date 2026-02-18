@@ -10,6 +10,9 @@ import { SidebarComponent } from '../../sidebar/sidebar.component';
 import { ChatHeaderComponent } from '../chat-header/chat-header.component';
 import { ChatInputComponent } from '../chat-input/chat-input.component';
 import { MessageListComponent, DisplayMessage } from '../message-list/message-list.component';
+import { RoomCreationModalComponent } from '../../modals/room-creation-modal/room-creation-modal.component';
+import { IncomingCallModalComponent } from '../../modals/incoming-call-modal/incoming-call-modal.component';
+import { CallPanelComponent } from '../../call/call-panel/call-panel.component';
 
 @Component({
   selector: 'app-chat-area',
@@ -19,7 +22,10 @@ import { MessageListComponent, DisplayMessage } from '../message-list/message-li
     SidebarComponent,
     ChatHeaderComponent,
     ChatInputComponent,
-    MessageListComponent
+    MessageListComponent,
+    RoomCreationModalComponent,
+    IncomingCallModalComponent,
+    CallPanelComponent
   ],
   template: `
     <div class="flex h-screen bg-gray-100">
@@ -30,7 +36,7 @@ import { MessageListComponent, DisplayMessage } from '../message-list/message-li
         [userId]="userId()"
         [syncState]="syncState()"
         (onRoomSelect)="selectRoom($event)"
-        (onCreateRoom)="createNewRoom()"
+        (onCreateRoom)="openRoomCreationModal()"
         (onLogout)="logout()"
         (onSettings)="openSettings()"
       />
@@ -69,6 +75,24 @@ import { MessageListComponent, DisplayMessage } from '../message-list/message-li
         }
       </div>
     </div>
+
+    <!-- Modals -->
+    <app-room-creation-modal
+      [isOpen]="showRoomCreationModal()"
+      (onCreate)="handleCreateRoom($event)"
+      (onClose)="closeRoomCreationModal()"
+    />
+
+    <app-incoming-call-modal
+      [isOpen]="showIncomingCallModal()"
+      [roomName]="incomingCallRoomName()"
+      [isVideoCall]="isIncomingVideoCall()"
+      (onAccept)="acceptIncomingCall()"
+      (onReject)="rejectIncomingCall()"
+    />
+
+    <!-- Call Panel -->
+    <app-call-panel />
   `,
   styles: []
 })
@@ -81,6 +105,12 @@ export class ChatAreaComponent implements OnInit, OnDestroy {
   displayMessages = signal<DisplayMessage[]>([]);
   userId = signal<string>('');
   syncState = signal<string>('STOPPED');
+  
+  // Modal states
+  showRoomCreationModal = signal(false);
+  showIncomingCallModal = signal(false);
+  incomingCallRoomName = signal('');
+  isIncomingVideoCall = signal(false);
 
   constructor(
     private matrixClientService: MatrixClientService,
@@ -109,6 +139,17 @@ export class ChatAreaComponent implements OnInit, OnDestroy {
     this.matrixClientService.syncState$.pipe(takeUntil(this.destroy$)).subscribe(state => {
       console.log('Sync state:', state);
       this.syncState.set(state);
+    });
+
+    // Subscribe to incoming calls
+    this.callService.incomingCall$.pipe(takeUntil(this.destroy$)).subscribe(incomingCall => {
+      if (incomingCall) {
+        this.incomingCallRoomName.set(incomingCall.roomName);
+        this.isIncomingVideoCall.set(true); // Simplified - check call type in production
+        this.showIncomingCallModal.set(true);
+      } else {
+        this.showIncomingCallModal.set(false);
+      }
     });
   }
 
@@ -202,9 +243,43 @@ export class ChatAreaComponent implements OnInit, OnDestroy {
     // TODO: Implement room info drawer
   }
 
-  createNewRoom(): void {
-    console.log('Create new room');
-    // TODO: Implement room creation modal
+  openRoomCreationModal(): void {
+    this.showRoomCreationModal.set(true);
+  }
+
+  closeRoomCreationModal(): void {
+    this.showRoomCreationModal.set(false);
+  }
+
+  async handleCreateRoom(data: {
+    name: string;
+    topic: string;
+    isDirect: boolean;
+    isEncrypted: boolean;
+    isPublic: boolean;
+  }): Promise<void> {
+    try {
+      const roomId = await this.matrixClientService.createRoom(data.name, data.isDirect, data.isEncrypted);
+      console.log('Created room:', roomId);
+      this.closeRoomCreationModal();
+      
+      // Select the newly created room
+      setTimeout(() => {
+        this.selectRoom(roomId);
+      }, 1000);
+    } catch (error) {
+      console.error('Failed to create room:', error);
+    }
+  }
+
+  acceptIncomingCall(): void {
+    this.callService.answerCall();
+    this.showIncomingCallModal.set(false);
+  }
+
+  rejectIncomingCall(): void {
+    this.callService.rejectCall();
+    this.showIncomingCallModal.set(false);
   }
 
   openSettings(): void {
